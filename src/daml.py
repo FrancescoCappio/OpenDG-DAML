@@ -278,7 +278,7 @@ def train(train_source_iter_list, model, optimizer,
         all_one_hot_labels = []  # 3batch_size
 
         for data_domain, train_source_iter in enumerate(train_source_iter_list):
-            x_s, labels_s, _ = next(train_source_iter)
+            x_s, labels_s, _,_ = next(train_source_iter)
             x_s = x_s.cuda()
             labels_s = labels_s.cuda()
             one_hot_labels = create_one_hot(labels_s, model.num_classes)
@@ -384,7 +384,7 @@ def train(train_source_iter_list, model, optimizer,
         all_one_hot_labels = []  # 3batch_size
 
         for data_domain, train_source_iter in enumerate(train_source_iter_list):
-            x_s, labels_s, _ = next(train_source_iter)
+            x_s, labels_s, _,_ = next(train_source_iter)
             x_s = x_s.cuda()
             labels_s = labels_s.cuda()
             one_hot_labels = create_one_hot(labels_s, model.num_classes)

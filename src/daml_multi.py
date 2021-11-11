@@ -70,11 +70,12 @@ def main(args):
     ST1 = range(48)
 
     source_root_list = [None, None, None]
-    source_root_list[0] = '/data3/trans_lib/office31'
-    source_root_list[1] = '/data3/trans_lib/stl10'
-    source_root_list[2] = '/data3/trans_lib/visda2017/train'
+    
+    source_root_list[0] = os.path.join(args.root, 'office31')
+    source_root_list[1] = os.path.join(args.root, 'stl10')
+    source_root_list[2] = os.path.join(args.root, 'visda2017')
 
-    target_root = '/data3/trans_lib/DomainNet'
+    target_root = os.path.join(args.root, 'DomainNet')
 
     dataset = datasets.__dict__[args.data]
 
@@ -235,7 +236,7 @@ def train(train_source_iter_list, model, optimizer,
         all_one_hot_labels = []  # 3batch_size
 
         for data_domain, train_source_iter in enumerate(train_source_iter_list):
-            x_s, labels_s, _ = next(train_source_iter)
+            x_s, labels_s, _, _ = next(train_source_iter)
             x_s = x_s.cuda()
             labels_s = labels_s.cuda()
             one_hot_labels = create_one_hot(labels_s, model.num_classes)
@@ -341,7 +342,7 @@ def train(train_source_iter_list, model, optimizer,
         all_one_hot_labels = []  # 3batch_size
 
         for data_domain, train_source_iter in enumerate(train_source_iter_list):
-            x_s, labels_s, _ = next(train_source_iter)
+            x_s, labels_s, _,_ = next(train_source_iter)
             x_s = x_s.cuda()
             labels_s = labels_s.cuda()
             one_hot_labels = create_one_hot(labels_s, model.num_classes)
@@ -476,11 +477,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch Open Domain Generalization')
     parser.add_argument('--root', metavar='DIR',
                         help='root path of dataset')
-    parser.add_argument('-d', '--data', metavar='DATA', default='OfficeHome',
+    parser.add_argument('-d', '--data', metavar='DATA', default='MultiDataSet',
                         help='dataset: ' + ' | '.join(dataset_names) +
                              ' (default: OfficeHome)')
-    parser.add_argument('-s', '--source', type=str, help='source domain(s)')
-    parser.add_argument('-t', '--target', type=str, help='target domain(s)')
+    parser.add_argument('-s', '--source', type=str, help='source domain(s)', default='ASV') # Amazon (O31), STL10, Visda
+    parser.add_argument('-t', '--target', type=str, help='target domain(s)', choices=['C', 'R', 'P', 'S']) # domainnet domains: clipart, real, painting, sketch
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
     parser.add_argument('--epochs', default=30, type=int, metavar='N',

@@ -5,9 +5,9 @@ class MultiDataSet(ImageList):
     def __init__(self, root, task, filter_class, split='all', **kwargs):
         if split == 'all':
             self.image_list = {
-                "A": "image_list/amazon.txt",
-                "W": "image_list/webcam.txt",
-                "D": "image_list/dslr.txt",
+                "A": "office31_image_list/amazon.txt",
+                "W": "office31_image_list/webcam.txt",
+                "D": "office31_image_list/dslr.txt",
                 "S": "stl10_imagelist/stl10_all_new.txt",
                 "V": "visda_imagelist/visda_all_new.txt",
                 "C": "domainnet_imagelist/domainnet_clipart_test_new.txt",
@@ -19,9 +19,9 @@ class MultiDataSet(ImageList):
             }
         elif split == 'train':
             self.image_list = {
-                "A": "image_list/amazon_train.txt",
-                "W": "image_list/webcam_train.txt",
-                "D": "image_list/dslr_train.txt",
+                "A": "office31_image_list/amazon_train.txt",
+                "W": "office31_image_list/webcam_train.txt",
+                "D": "office31_image_list/dslr_train.txt",
                 "S": "stl10_imagelist/stl10_train_new.txt",
                 "V": "visda_imagelist/visda_train_new.txt",
                 "C": "domainnet_imagelist/domainnet_clipart_test_new.txt",
@@ -33,9 +33,9 @@ class MultiDataSet(ImageList):
             }
         elif split == 'val':
             self.image_list = {
-                "A": "image_list/amazon_val.txt",
-                "W": "image_list/webcam_val.txt",
-                "D": "image_list/dslr_val.txt",
+                "A": "office31_image_list/amazon_val.txt",
+                "W": "office31_image_list/webcam_val.txt",
+                "D": "office31_image_list/dslr_val.txt",
                 "S": "stl10_imagelist/stl10_val_new.txt",
                 "V": "visda_imagelist/visda_val_new.txt",
                 "C": "domainnet_imagelist/domainnet_clipart_test_new.txt",
