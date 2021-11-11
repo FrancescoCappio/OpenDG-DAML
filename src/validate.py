@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torch.nn.functional as F
+from sklearn.metrics import roc_auc_score
 
 sys.path.append('.')
 
@@ -106,21 +107,26 @@ def main(args):
     raw_output_dict = {}
     target_dict = {}
     targets = []
+    all_paths = []
 
+    # for each class in target classes extract predictions from source models for target samples of that class
     for class_index in all_target_classes:
         the_class = [class_index]
 
         the_target_dataset = dataset(root=args.root, task=the_target, filter_class=the_class, split='all',
                                     transform=val_tranform)
+        print(f"Class {class_index}, size: {len(the_target_dataset)}")
         the_target_loader = DataLoader(the_target_dataset, batch_size=args.batch_size,
-                                    shuffle=True, num_workers=args.workers, drop_last=False)
+                                    shuffle=False, num_workers=args.workers, drop_last=False)
         the_target_list = [the_target_loader]
 
-        output, target = get_raw_output(the_target_list, classifier, num_classes)
+        output, target, class_paths = get_raw_output(the_target_list, classifier, num_classes)
+        all_paths.extend(class_paths)
         raw_output_dict[class_index] = output
         target_dict[class_index] = target
         targets.append(target)
 
+    import ipdb; ipdb.set_trace() 
     targets = torch.cat(targets)
     outlier_targets = (targets == num_classes).float()
 
@@ -129,17 +135,39 @@ def main(args):
     outlier_indi_dict = {}
     outlier_indis = []
 
+    # for each target class, perform ensemble of source models predictions with a non weighted average, 
+    # also extract the maximum confidence as "indicator" for each sample
+
+    correct = 0
+    total = 0
+    idx = 0
+    predictions = {}
     for class_index in all_target_classes:
         raw_output = raw_output_dict[class_index]
 
         output, indicator = get_new_output(raw_output, T)
 
+        predicted_val, predicted_cls = output.max(dim=1)
+        if class_index not in TT:
+            correct += (predicted_cls==class_index).sum()
+            total += len(output)
+        
+        for p_cls, p_conf in zip(predicted_cls, predicted_val):
+            predictions[idx] = {'cls': p_cls, "conf": p_conf}
+            idx += 1
+
         tsm_output_dict[class_index] = output
         outlier_indi_dict[class_index] = indicator
         outlier_indis.append(indicator)
 
+    print(f"Closed set acc: {(correct/total)*100}")
+    with open("predictions.txt", "w") as out_f:
+        for k in predictions.keys():
+            out_f.write(f"{k},{predictions[k]['cls']},{predictions[k]['conf']}\n")
+
     outlier_indis = torch.cat(outlier_indis)
 
+    # get range of confidence values, divide it in 10 in order to obtain 10 possible thresholds values
     thd_min = torch.min(outlier_indis)
     thd_max = torch.max(outlier_indis)
     outlier_range = [thd_min + (thd_max - thd_min) * i / 9 for i in range(10)]
@@ -148,11 +176,21 @@ def main(args):
     best_thred_acc = 0.0
     best_overall_Hscore = 0.0
     best_thred_Hscore = 0.0
+    best_known_acc = 0.0
+    best_unknown_acc = 0.0
     best_overall_caa = 0.0
     best_thred_caa = 0.0
 
+    # let's compute auroc 
+    auroc = get_auroc(scores_id=outlier_indis[targets<num_classes].cpu().numpy(),scores_ood=outlier_indis[targets==num_classes].cpu().numpy())
+    print("Auroc: ", auroc)
+
+    # for each possible threshold value
     for outlier_thred in outlier_range:
         acc_dict = {}
+
+        # for each target class, get sources ensembled predictions for that class and max confidences for that class 
+        # get accuracy in the prediction of that class
         for class_index in all_target_classes:
             tsm_output = tsm_output_dict[class_index]
             outlier_indi = outlier_indi_dict[class_index]
@@ -160,12 +198,18 @@ def main(args):
             acc = get_acc(tsm_output, outlier_indi, outlier_thred, target)
             acc_dict[class_index] = acc
 
+        # overall accuracy is not simply the average class accuracy. On the contrary we take into account also class cardinalities
+        # and we obtain accuracy over the whole dataset 
         overall_acc = (np.sum([acc.sum.item() for acc in acc_dict.values()]) / np.sum([acc.count for acc in acc_dict.values()])).item()
 
+        # insider acc is overall accuracy over known classes (the same as overall_acc, but without considering outlier classes)
         insider = (np.sum([acc_dict[Cl].sum.item() for Cl in ST1]) / np.sum([acc_dict[Cl].count for Cl in ST1])).item()
+        # outsider acc is overall accuracy for outlier classes 
         outsider = (np.sum([acc_dict[Cl].sum.item() for Cl in TT]) / np.sum([acc_dict[Cl].count for Cl in TT])).item()
+        # compute Hscore
         overall_Hscore = 2.0 * insider * outsider / (insider + outsider)
 
+        # overall caa is the averace of class accuracies
         overall_caa = np.mean([acc.avg.item() for acc in acc_dict.values()])
 
         if overall_acc > best_overall_acc:
@@ -174,26 +218,32 @@ def main(args):
         if overall_Hscore > best_overall_Hscore:
             best_overall_Hscore = overall_Hscore
             best_thred_Hscore = outlier_thred
+            best_known_acc = insider
+            best_unknown_acc = outsider
         if overall_caa > best_overall_caa:
             best_overall_caa = overall_caa
             best_thred_caa = outlier_thred
 
 
-    print('Best OverallAcc: %.2f' % (best_overall_acc), 'Best threshold Acc: %.3f' % (best_thred_acc),
-    'Best OverallHscore: %.2f' % (best_overall_Hscore), 'Best threshold Hscore: %.3f' % (best_thred_Hscore),
-    'Best OverallCaa: %.2f' % (best_overall_caa), 'Best threshold Caa: %.3f' % (best_thred_caa))
+    print('Best Overall Acc: %.2f' % (best_overall_acc), 'Best Acc threshold: %.3f' % (best_thred_acc),
+    '\nBest Overall Hscore: %.2f' % (best_overall_Hscore), 'Best Hscore threshold: %.3f' % (best_thred_Hscore),
+    '\nKnown acc: %.2f ' % (best_known_acc), 'Unk acc: %.2f' % (best_unknown_acc),
+    '\nBest Overall Caa: %.2f' % (best_overall_caa), 'Best Caa threshold: %.3f' % (best_thred_caa))
+    
 
 
 def get_raw_output(val_loader, model, num_classes):
     model.eval()
     output_sum = []
     target_sum = []
+    all_paths = []
 
     with torch.no_grad():
         for the_loader in val_loader:
-            for i, (images, target, _) in enumerate(the_loader):
+            for i, (images, target, _, paths) in enumerate(the_loader):
                 images = images.cuda()
                 target = target.cuda()
+                all_paths.extend(list(paths))
                 outlier_flag = (target > (num_classes - 1)).float()
                 target = target * (1 - outlier_flag) + num_classes * outlier_flag
                 target = target.long()
@@ -206,7 +256,7 @@ def get_raw_output(val_loader, model, num_classes):
     output_sum = [torch.cat([output_sum[j][i] for j in range(len(output_sum))], dim=0) for i in range(3)]
 
     target_sum = torch.cat(target_sum)
-    return output_sum, target_sum
+    return output_sum, target_sum, all_paths
 
 
 def get_new_output(raw_output, T):
@@ -221,15 +271,24 @@ def get_new_output(raw_output, T):
 def get_acc(tsm_output, outlier_indi, outlier_thred, target):
     top1 = AverageMeter('Acc@1', ':6.2f')
 
+    # we use the outlier_indicator to compute a score for the prediction of the outlier class
+    # the score is simply 0 if the outlier class is not predicted (max confidence is higher than threshold),
+    # otherwise it takes value 1
     outlier_pred = (outlier_indi < outlier_thred).float()
     outlier_pred = outlier_pred.view(-1, 1)
+    # we concatenate prediction of outlier class with predictions of other classes
     output = torch.cat((tsm_output, outlier_pred.cuda()), dim=1)
     # measure accuracy and record loss
+    # we compute accuracy for current class 
     acc1, acc5 = accuracy(output, target, topk=(1, 5))
     top1.update(acc1[0], output.shape[0])
     return top1
 
 
+def get_auroc(scores_id, scores_ood):
+    scores = np.concatenate([scores_id, scores_ood])
+    labels = np.concatenate([np.ones_like(scores_id), np.zeros_like(scores_ood)])
+    return roc_auc_score(labels, scores)
 
 if __name__ == '__main__':
 

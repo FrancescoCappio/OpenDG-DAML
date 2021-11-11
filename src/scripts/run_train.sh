@@ -13,7 +13,7 @@ target=R
 log_name=daml-${source}-${target}
 
 python daml.py \
-    --root /data3/trans_lib/officehome \
+    --root dataset/OfficeHome/ \
     -d OfficeHome \
     -s ${source} \
     -t ${target} \
